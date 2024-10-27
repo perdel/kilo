@@ -419,7 +419,7 @@ void editorFind() {
         char *match = strstr(row->chars, query);
         if (match) {
             E.cy = i;
-            E.cx = match - row->render;
+            E.cx = editorRowRxToCx(row, match - row->render);
             break;
         }
     }
