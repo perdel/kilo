@@ -409,9 +409,10 @@ void editorSave() {
 
 /*** find ***/
 
-void editorFind() {
-    char *query = editorPrompt("Search (ESC to cancel): %s", NULL);
-    if (query == NULL) return;
+void editorFindCallback(char *query, int key) {
+    if (key == '\r' || key == '\x1b') {
+        return;
+    }
 
     int i;
     for (i = 0; i < E.numrows; i++) {
@@ -420,11 +421,18 @@ void editorFind() {
         if (match) {
             E.cy = i;
             E.cx = editorRowRxToCx(row, match - row->render);
+            E.rowoff = E.numrows;
             break;
         }
     }
+}
+    
+void editorFind() {
+    char *query = editorPrompt("Search (ESC to cancel): %s", editorFindCallback);
 
-    free(query);
+    if (query) {
+        free(query);
+    }
 }
 /*** append buffer ***/
 
