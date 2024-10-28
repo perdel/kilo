@@ -69,7 +69,7 @@ struct editorConfig E;
 
 void editorSetStatusMessage(const char *fmt, ...);
 void editorRefreshScreen();
-char *editorPrompt(char *prompt);
+char *editorPrompt(char *prompt, void (*callback)(char *, int));
 
 struct termios orig_termios;
 
@@ -380,7 +380,7 @@ void editorOpen(char *filename) {
 
 void editorSave() {
     if (E.filename == NULL) {
-        E.filename = editorPrompt("Save as: %s (ESC to cancel)");
+        E.filename = editorPrompt("Save as: %s (ESC to cancel)", NULL);
         if (E.filename == NULL) {
             editorSetStatusMessage("Save aborted");
             return;
@@ -409,9 +409,10 @@ void editorSave() {
 
 /*** find ***/
 
-void editorFind() {
-    char *query = editorPrompt("Search (ESC to cancel): %s");
-    if (query == NULL) return;
+void editorFindCallback(char *query, int key) {
+    if (key == '\r' || key == '\x1b') {
+        return;
+    }
 
     int i;
     for (i = 0; i < E.numrows; i++) {
@@ -420,11 +421,18 @@ void editorFind() {
         if (match) {
             E.cy = i;
             E.cx = editorRowRxToCx(row, match - row->render);
+            E.rowoff = E.numrows;
             break;
         }
     }
+}
+    
+void editorFind() {
+    char *query = editorPrompt("Search (ESC to cancel): %s", editorFindCallback);
 
-    free(query);
+    if (query) {
+        free(query);
+    }
 }
 /*** append buffer ***/
 
@@ -566,7 +574,7 @@ void editorSetStatusMessage(const char *fmt, ...) {
 
 /*** input ***/
 
-char *editorPrompt(char *prompt) {
+char *editorPrompt(char *prompt, void (*callback)(char *, int)) {
     size_t bufsize = 128;
     char *buf = malloc(bufsize);
     size_t buflen = 0;
@@ -581,11 +589,13 @@ char *editorPrompt(char *prompt) {
             if (buflen != 0) buf[--buflen] = '\0';
         } else if (c == '\x1b') {
             editorSetStatusMessage("");
+            if (callback) callback(buf, c);
             free(buf);
             return NULL;
         } else if (c == '\r') {
             if (buflen != 0) {
                 editorSetStatusMessage("");
+                if (callback) callback(buf, c);
                 return buf;
             }
         } else if (!iscntrl(c) && c < 128) {
@@ -596,6 +606,8 @@ char *editorPrompt(char *prompt) {
             buf[buflen++] = c;
             buf[buflen] = '\0';
         }
+
+        if (callback) callback(buf, c);
     }
 }
 
