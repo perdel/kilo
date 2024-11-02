@@ -196,17 +196,24 @@ int getWindowSize(int *rows, int *cols) {
 
  /*** syntax highlighting ***/
 
- void editorUpdateSyntax(erow *row) {
-    row->hl = realloc(row->hl, row->size);
-    memset(row->hl, 0, row->size);
+void editorUpdateSyntax(erow *row) {
+   row->hl = realloc(row->hl, row->size);
+   memset(row->hl, 0, row->size);
 
-    int i;
-    for (i = 0; i < row->rsize; i++) {
-        if (isdigit(row->render[i])) {
-            row->hl[i] = HL_NUMBER;
-        }
-    }
- }
+   int i;
+   for (i = 0; i < row->rsize; i++) {
+       if (isdigit(row->render[i])) {
+           row->hl[i] = HL_NUMBER;
+       }
+   }
+}
+
+int editorSyntaxToColor(int hl) {
+   switch (hl) {
+       case HL_NORMAL: return 31;
+       default: return 37;
+   }
+}
 
 /*** row operations ***/
 
