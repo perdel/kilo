@@ -1,4 +1,4 @@
-/*** includes  ***/
+/*** includes ***/
 
 #define _DEFAULT_SOURCE
 #define _BSD_SOURCE
@@ -20,7 +20,7 @@
 /*** defines ***/
 
 #define KILO_VERSION "0.0.1"
-#define KILO_TAB_STOPS 8
+#define KILO_TAB_STOP 8
 #define KILO_QUIT_TIMES 3
 
 #define CTRL_KEY(k) ((k) & 0x1f)
@@ -77,8 +77,6 @@ struct editorConfig E;
 void editorSetStatusMessage(const char *fmt, ...);
 void editorRefreshScreen();
 char *editorPrompt(char *prompt, void (*callback)(char *, int));
-
-struct termios orig_termios;
 
 /*** terminal ***/
 
@@ -137,7 +135,6 @@ int editorReadKey() {
                         case '8': return END_KEY;
                     }
                 }
-                
             } else {
                 switch (seq[1]) {
                     case 'A': return ARROW_UP;
@@ -167,8 +164,6 @@ int getCursorPosition(int *rows, int *cols) {
 
     if (write(STDOUT_FILENO, "\x1b[6n", 4) != 4) return -1;
     
-    printf("\r\n");
-    char c;
     while (i < sizeof(buf) - 1) {
         if (read(STDIN_FILENO, &buf[i], 1) != 1) break;
         if (buf[i] == 'R') break;
@@ -198,8 +193,8 @@ int getWindowSize(int *rows, int *cols) {
  /*** syntax highlighting ***/
 
 void editorUpdateSyntax(erow *row) {
-   row->hl = realloc(row->hl, row->size);
-   memset(row->hl, 0, row->size);
+   row->hl = realloc(row->hl, row->rsize);
+   memset(row->hl, HL_NORMAL, row->rsize);
 
    int i;
    for (i = 0; i < row->rsize; i++) {
@@ -211,7 +206,7 @@ void editorUpdateSyntax(erow *row) {
 
 int editorSyntaxToColor(int hl) {
    switch (hl) {
-       case HL_NORMAL: return 31;
+       case HL_NUMBER: return 31;
        case HL_MATCH: return 34;
        default: return 37;
    }
@@ -224,7 +219,7 @@ int editorRowCxToRx(erow *row, int cx) {
     int j;
     for (j = 0; j < cx; j++) {
         if (row->chars[j] == '\t') 
-            rx += (KILO_TAB_STOPS - 1) - (rx % KILO_TAB_STOPS);
+            rx += (KILO_TAB_STOP - 1) - (rx % KILO_TAB_STOP);
         rx++;
     }
     return rx;
@@ -235,7 +230,7 @@ int editorRowRxToCx(erow *row, int rx) {
     int cx;
     for (cx = 0; cx < row->size; cx++) {
         if (row->chars[cx] == '\t') 
-            cur_rx += (KILO_TAB_STOPS - 1) - (cur_rx % KILO_TAB_STOPS);
+            cur_rx += (KILO_TAB_STOP - 1) - (cur_rx % KILO_TAB_STOP);
         cur_rx++;
 
         if (cur_rx > rx) return cx;
@@ -250,13 +245,13 @@ void editorUpdateRow(erow *row) {
         if (row->chars[j] == '\t') tabs++;
 
     free(row->render);
-    row->render = malloc(row->size + tabs*(KILO_TAB_STOPS - 1) + 1);
+    row->render = malloc(row->size + tabs*(KILO_TAB_STOP - 1) + 1);
 
     int idx = 0;
     for (j = 0; j < row->size; j++) {
         if (row->chars[j] == '\t') {
             row->render[idx++] = ' ';
-            while (idx % KILO_TAB_STOPS != 0) row->render[idx++] = ' ';
+            while (idx % KILO_TAB_STOP != 0) row->render[idx++] = ' ';
         } else {
             row->render[idx++] = row->chars[j];
         }
@@ -301,10 +296,10 @@ void editorDelRow(int at) {
     E.dirty++;
 }
 
-void editorRowInsertChar(erow *row, int at, char c) {
+void editorRowInsertChar(erow *row, int at, int c) {
     if (at < 0 || at > row->size) at = row->size;
     row->chars = realloc(row->chars, row->size + 2);
-    memmove(row->chars + at + 1, row->chars + at, row->size - at + 1);
+    memmove(&row->chars[at + 1], &row->chars[at], row->size - at + 1);
     row->size++;
     row->chars[at] = c;
     editorUpdateRow(row);
@@ -322,7 +317,7 @@ void editorRowAppendString(erow *row, char *s, size_t len) {
 
 void editorRowDelChar(erow *row, int at) {
     if (at < 0 || at >= row->size) return;
-    memmove(row->chars + at, row->chars + at + 1, row->size - at);
+    memmove(&row->chars[at], &row->chars[at + 1], row->size - at);
     row->size--;
     editorUpdateRow(row);
     E.dirty++;
@@ -334,7 +329,6 @@ void editorInsertChar(int c) {
     if (E.cy == E.numrows) {
         editorInsertRow(E.numrows, "", 0);
     }
-
     editorRowInsertChar(&E.row[E.cy], E.cx, c);
     E.cx++;
 }
@@ -387,6 +381,7 @@ char *editorRowsToString(int *buflen) {
         *p = '\n';
         p++;
     }
+
     return buf;
 }
 
@@ -422,6 +417,7 @@ void editorSave() {
 
     int len;
     char *buf = editorRowsToString(&len);
+
     int fd = open(E.filename, O_RDWR | O_CREAT, 0644);
     if (fd != -1) {
         if (ftruncate(fd, len) != -1) {
@@ -468,7 +464,7 @@ void editorFindCallback(char *query, int key) {
         else if (current == E.numrows) current = 0;
 
         erow *row = &E.row[current];
-        char *match = strstr(row->chars, query);
+        char *match = strstr(row->render, query);
         if (match) {
             last_match = current;
             E.cy = current;
@@ -497,6 +493,7 @@ void editorFind() {
         E.rowoff = saved_rowoff;
     }
 }
+
 /*** append buffer ***/
 
 struct abuf {
@@ -522,7 +519,7 @@ void abFree(struct abuf *ab) {
 /*** output ***/
 
 void editorScroll() {
-    E.rx = E.cx;
+    E.rx = 0;
     if (E.cy < E.numrows) {
         E.rx = editorRowCxToRx(&E.row[E.cy], E.cx);
     }
@@ -662,6 +659,7 @@ void editorSetStatusMessage(const char *fmt, ...) {
 char *editorPrompt(char *prompt, void (*callback)(char *, int)) {
     size_t bufsize = 128;
     char *buf = malloc(bufsize);
+
     size_t buflen = 0;
     buf[0] = '\0';
 
@@ -748,7 +746,7 @@ void editorProcessKeypress() {
         case CTRL_KEY('q'):
             if (E.dirty && quit_times > 0) {
                 editorSetStatusMessage("WARNING!!! File has unsaved changes. "
-                "Press CTRL-Q %d more times to quit.", quit_times);
+                "Press Ctrl-Q %d more times to quit.", quit_times);
                 quit_times--;
                 return;
             }
@@ -790,6 +788,7 @@ void editorProcessKeypress() {
                     E.cy = E.rowoff + E.screenrows - 1;
                     if (E.cy > E.numrows) E.cy = E.numrows;
                 }
+
                 int times = E.screenrows;
                 while (times--) {
                     editorMoveCursor(c == PAGE_UP ? ARROW_UP : ARROW_DOWN);
@@ -815,6 +814,7 @@ void editorProcessKeypress() {
 
     quit_times = KILO_QUIT_TIMES;
 }
+
 /*** init ***/
 
 void initEditor() {
@@ -841,7 +841,8 @@ int main(int argc, char *argv[]) {
         editorOpen(argv[1]);
     } 
 
-    editorSetStatusMessage("HELP: Ctrl-S = save | Ctrl-Q = quit | Ctrl-F = find");
+    editorSetStatusMessage(
+        "HELP: Ctrl-S = save | Ctrl-Q = quit | Ctrl-F = find");
 
     while (1) {
         editorRefreshScreen();
